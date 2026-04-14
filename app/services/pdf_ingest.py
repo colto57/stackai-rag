@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import re
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -87,6 +88,10 @@ class IngestionService:
         self.embedder = embedder
 
     async def ingest_pdf(self, filename: str, content: bytes) -> IngestedDocument:
+        file_hash = hashlib.sha256(content).hexdigest()
+        if self.store.has_file_hash(file_hash):
+            raise ValueError("Duplicate file detected (same content hash) already exists in memory.")
+
         reader = PdfReader(io.BytesIO(content))
         page_texts: list[tuple[int, str]] = []
         for idx, page in enumerate(reader.pages, start=1):
@@ -119,6 +124,8 @@ class IngestionService:
             "doc_id": doc_id,
             "filename": filename,
             "pages": len(page_texts),
+            "file_size_bytes": len(content),
+            "file_hash": file_hash,
             "created_at": now,
         }
         self.store.upsert_document(document, chunks)

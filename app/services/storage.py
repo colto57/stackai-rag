@@ -63,6 +63,12 @@ class JsonStore:
         docs.sort(key=lambda d: d.get("created_at", ""), reverse=True)
         return docs
 
+    def has_file_hash(self, file_hash: str) -> bool:
+        if not file_hash:
+            return False
+        docs = self._read_index().get("documents", [])
+        return any(d.get("file_hash") == file_hash for d in docs)
+
     def clear_all(self) -> None:
         with self._lock:
             self._write_index({"documents": [], "chunks": []})

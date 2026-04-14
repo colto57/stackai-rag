@@ -94,6 +94,8 @@ async def list_memory_files() -> MemoryFilesResponse:
                 filename=doc["filename"],
                 pages=doc["pages"],
                 created_at=doc.get("created_at"),
+                file_size_bytes=doc.get("file_size_bytes"),
+                file_hash=doc.get("file_hash"),
             )
             for doc in docs
         ],

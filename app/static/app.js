@@ -10,12 +10,17 @@ const memoryFileList = document.getElementById("memoryFileList");
 const selectedSummary = document.getElementById("selectedSummary");
 const selectedFileList = document.getElementById("selectedFileList");
 const pendingFiles = new Map();
+const knownMemoryHashes = new Set();
+
+async function sha256Hex(file) {
+  const buffer = await file.arrayBuffer();
+  const digest = await crypto.subtle.digest("SHA-256", buffer);
+  const bytes = Array.from(new Uint8Array(digest));
+  return bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 function escapeHtml(text) {
-  return text
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+  return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
 function applyInlineMarkdown(text) {
@@ -45,7 +50,6 @@ function renderAssistantContent(text) {
       closeLists();
       continue;
     }
-
     const bulletMatch = line.match(/^[-*]\s+(.+)/);
     if (bulletMatch) {
       if (inOl) {
@@ -59,7 +63,6 @@ function renderAssistantContent(text) {
       htmlParts.push(`<li>${applyInlineMarkdown(escapeHtml(bulletMatch[1]))}</li>`);
       continue;
     }
-
     const numberedMatch = line.match(/^\d+\.\s+(.+)/);
     if (numberedMatch) {
       if (inUl) {
@@ -73,19 +76,15 @@ function renderAssistantContent(text) {
       htmlParts.push(`<li>${applyInlineMarkdown(escapeHtml(numberedMatch[1]))}</li>`);
       continue;
     }
-
     closeLists();
     htmlParts.push(`<p>${applyInlineMarkdown(escapeHtml(line))}</p>`);
   }
-
   closeLists();
   return htmlParts.join("");
 }
 
 function prettifyMeta(metaText) {
-  return metaText
-    .replaceAll(" | ", "\n")
-    .replaceAll("; ", "\n- ");
+  return metaText.replaceAll(" | ", "\n").replaceAll("; ", "\n- ");
 }
 
 function appendMessage(role, content, metaText = "") {
@@ -101,6 +100,7 @@ function appendMessage(role, content, metaText = "") {
     body.appendChild(pre);
   }
   div.appendChild(body);
+
   if (metaText) {
     const meta = document.createElement("div");
     meta.className = "meta";
@@ -117,23 +117,31 @@ function fileKey(file) {
 }
 
 function renderPendingFiles() {
-  const files = Array.from(pendingFiles.values());
-  selectedSummary.textContent = `Pending upload: ${files.length} file${files.length === 1 ? "" : "s"}`;
-  if (files.length === 0) {
+  const entries = Array.from(pendingFiles.values());
+  selectedSummary.textContent = `Pending upload: ${entries.length} file${entries.length === 1 ? "" : "s"}`;
+  if (entries.length === 0) {
     selectedFileList.textContent = "No files selected for upload.";
     return;
   }
   selectedFileList.innerHTML = "";
-  files.forEach((file) => {
+  entries.forEach((entry) => {
     const item = document.createElement("div");
     item.className = "file-item";
-    const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
-    item.textContent = `${file.name} (${sizeMb} MB)`;
+    const sizeMb = (entry.file.size / (1024 * 1024)).toFixed(2);
+    const duplicateTag = entry.isDuplicate ? " [already uploaded]" : "";
+    item.textContent = `${entry.file.name} (${sizeMb} MB)${duplicateTag}`;
     selectedFileList.appendChild(item);
   });
 }
 
 function renderMemoryFiles(data) {
+  knownMemoryHashes.clear();
+  for (const file of data.files || []) {
+    if (file.file_hash) {
+      knownMemoryHashes.add(file.file_hash);
+    }
+  }
+
   memorySummary.textContent = `In-memory documents: ${data.total_documents} | Indexed chunks: ${data.total_chunks}`;
   if (!data.files || data.files.length === 0) {
     memoryFileList.textContent = "No files currently in memory.";
@@ -157,18 +165,65 @@ async function refreshMemoryFiles() {
   renderMemoryFiles(data);
 }
 
+pdfInput.addEventListener("change", () => {
+  const chosen = Array.from(pdfInput.files);
+  const pendingHashes = new Set(Array.from(pendingFiles.values()).map((entry) => entry.fileHash));
+
+  Promise.all(
+    chosen.map(async (file) => {
+      const hash = await sha256Hex(file);
+      return {
+        file,
+        fileHash: hash,
+        isDuplicate: knownMemoryHashes.has(hash) || pendingHashes.has(hash),
+      };
+    })
+  )
+    .then((enriched) => {
+      enriched.forEach((entry) => {
+        pendingFiles.set(fileKey(entry.file), entry);
+      });
+      renderPendingFiles();
+      if (enriched.some((e) => e.isDuplicate)) {
+        uploadStatus.textContent = "Warning: one or more selected files already exist in memory or queue.";
+        uploadStatus.classList.add("status-warn");
+      } else {
+        uploadStatus.classList.remove("status-warn");
+      }
+    })
+    .catch((err) => {
+      uploadStatus.textContent = `Could not inspect selected files: ${err.message}`;
+      uploadStatus.classList.add("status-warn");
+    })
+    .finally(() => {
+      // Allow selecting same filenames again in later batches.
+      pdfInput.value = "";
+    });
+});
+
 uploadBtn.addEventListener("click", async () => {
-  const filesToUpload = Array.from(pendingFiles.values());
-  if (!filesToUpload.length) {
+  const entries = Array.from(pendingFiles.values());
+  if (entries.length === 0) {
     uploadStatus.textContent = "Select at least one PDF file.";
     return;
   }
+  const duplicates = entries.filter((entry) => entry.isDuplicate);
+  if (duplicates.length > 0) {
+    const names = duplicates.slice(0, 5).map((entry) => entry.file.name).join(", ");
+    const suffix = duplicates.length > 5 ? ", ..." : "";
+    const ok = window.confirm(`Are you sure you want to upload duplicate file(s)? ${names}${suffix}`);
+    if (!ok) {
+      uploadStatus.textContent = "Upload cancelled due to duplicate files.";
+      return;
+    }
+  }
+
   uploadBtn.disabled = true;
   try {
     const form = new FormData();
-    for (const file of filesToUpload) {
-      form.append("files", file);
-    }
+    entries.forEach((entry) => {
+      form.append("files", entry.file);
+    });
     const res = await fetch("/ingest", {
       method: "POST",
       body: form,
@@ -185,12 +240,13 @@ uploadBtn.addEventListener("click", async () => {
       })
       .join(" | ");
     uploadStatus.textContent = `Indexed docs=${data.total_documents}, chunks=${data.total_chunks}. ${ingested}`;
+    uploadStatus.classList.remove("status-warn");
     pendingFiles.clear();
-    pdfInput.value = "";
     renderPendingFiles();
     await refreshMemoryFiles();
   } catch (err) {
     uploadStatus.textContent = `Upload error: ${err.message}`;
+    uploadStatus.classList.add("status-warn");
   } finally {
     uploadBtn.disabled = false;
   }
@@ -207,20 +263,13 @@ clearFilesBtn.addEventListener("click", async () => {
     const data = await res.json();
     renderMemoryFiles(data);
     uploadStatus.textContent = "Cleared all in-memory files and index.";
+    uploadStatus.classList.remove("status-warn");
   } catch (err) {
     uploadStatus.textContent = `Clear error: ${err.message}`;
+    uploadStatus.classList.add("status-warn");
   } finally {
     clearFilesBtn.disabled = false;
   }
-});
-
-pdfInput.addEventListener("change", () => {
-  for (const file of Array.from(pdfInput.files)) {
-    pendingFiles.set(fileKey(file), file);
-  }
-  renderPendingFiles();
-  // Allow selecting the same file again later if user clears queue.
-  pdfInput.value = "";
 });
 
 askBtn.addEventListener("click", async () => {
@@ -264,5 +313,4 @@ refreshMemoryFiles().catch((err) => {
   memorySummary.textContent = `Memory status unavailable: ${err.message}`;
   memoryFileList.textContent = "";
 });
-
 renderPendingFiles();

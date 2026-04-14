@@ -48,6 +48,8 @@ class MemoryFile(BaseModel):
     filename: str
     pages: int
     created_at: str | None = None
+    file_size_bytes: int | None = None
+    file_hash: str | None = None
 
 
 class MemoryFilesResponse(BaseModel):

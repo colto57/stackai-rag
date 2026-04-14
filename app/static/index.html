@@ -62,6 +62,26 @@
         align-items: center;
         flex-wrap: wrap;
       }
+      .upload-controls {
+        margin-bottom: 8px;
+      }
+      .hidden-input {
+        display: none;
+      }
+      .file-picker-label {
+        border: 1px solid #3d4f70;
+        border-radius: 10px;
+        padding: 11px 16px;
+        background: rgba(17, 26, 46, 0.95);
+        color: var(--text);
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.08s ease, border-color 0.2s ease;
+      }
+      .file-picker-label:hover {
+        transform: translateY(-1px);
+        border-color: #5d78a8;
+      }
       input[type="text"], textarea {
         width: 100%;
         border: 1px solid #3d4f70;
@@ -146,6 +166,9 @@
         font-size: 12px;
         margin-top: 6px;
       }
+      .status-warn {
+        color: #fbbf24;
+      }
       .file-item {
         margin-bottom: 7px;
         padding: 6px 8px;
@@ -202,8 +225,9 @@
       <div class="panel">
         <h1>StackAI RAG Chat</h1>
         <p class="sub">Upload PDFs, query your knowledge base, and manage in-memory files.</p>
-        <div class="row">
-          <input id="pdfInput" type="file" accept=".pdf" multiple />
+        <div class="row upload-controls">
+          <label for="pdfInput" class="file-picker-label">Choose Files</label>
+          <input id="pdfInput" class="hidden-input" type="file" accept=".pdf" multiple />
           <button id="uploadBtn">Upload PDFs</button>
           <button id="clearFilesBtn" class="secondary-btn">Clear Files</button>
         </div>
