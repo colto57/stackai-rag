@@ -11,12 +11,20 @@ const selectedSummary = document.getElementById("selectedSummary");
 const selectedFileList = document.getElementById("selectedFileList");
 const pendingFiles = new Map();
 const knownMemoryHashes = new Set();
+const knownMemorySignatures = new Set();
 
 async function sha256Hex(file) {
-  const buffer = await file.arrayBuffer();
-  const digest = await crypto.subtle.digest("SHA-256", buffer);
-  const bytes = Array.from(new Uint8Array(digest));
-  return bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
+  if (!globalThis.crypto || !globalThis.crypto.subtle) {
+    return "";
+  }
+  try {
+    const buffer = await file.arrayBuffer();
+    const digest = await crypto.subtle.digest("SHA-256", buffer);
+    const bytes = Array.from(new Uint8Array(digest));
+    return bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
+  } catch (_) {
+    return "";
+  }
 }
 
 function escapeHtml(text) {
@@ -116,6 +124,10 @@ function fileKey(file) {
   return `${file.name}__${file.size}__${file.lastModified}`;
 }
 
+function fileSignature(name, size) {
+  return `${String(name || "").toLowerCase()}__${Number(size || 0)}`;
+}
+
 function renderPendingFiles() {
   const entries = Array.from(pendingFiles.values());
   selectedSummary.textContent = `Pending upload: ${entries.length} file${entries.length === 1 ? "" : "s"}`;
@@ -136,9 +148,13 @@ function renderPendingFiles() {
 
 function renderMemoryFiles(data) {
   knownMemoryHashes.clear();
+  knownMemorySignatures.clear();
   for (const file of data.files || []) {
     if (file.file_hash) {
       knownMemoryHashes.add(file.file_hash);
+    }
+    if (file.filename) {
+      knownMemorySignatures.add(fileSignature(file.filename, file.file_size_bytes));
     }
   }
 
@@ -168,6 +184,23 @@ async function refreshMemoryFiles() {
 pdfInput.addEventListener("change", () => {
   const chosen = Array.from(pdfInput.files);
   const pendingHashes = new Set(Array.from(pendingFiles.values()).map((entry) => entry.fileHash));
+  const pendingSignatures = new Set(
+    Array.from(pendingFiles.values()).map((entry) => fileSignature(entry.file.name, entry.file.size))
+  );
+
+  // Add files immediately so UI never appears broken.
+  const provisionalEntries = chosen.map((file) => {
+    const sig = fileSignature(file.name, file.size);
+    return {
+      file,
+      fileHash: "",
+      isDuplicate: knownMemorySignatures.has(sig) || pendingSignatures.has(sig),
+    };
+  });
+  provisionalEntries.forEach((entry) => {
+    pendingFiles.set(fileKey(entry.file), entry);
+  });
+  renderPendingFiles();
 
   Promise.all(
     chosen.map(async (file) => {
@@ -175,24 +208,35 @@ pdfInput.addEventListener("change", () => {
       return {
         file,
         fileHash: hash,
-        isDuplicate: knownMemoryHashes.has(hash) || pendingHashes.has(hash),
+        isDuplicate: false,
       };
     })
   )
     .then((enriched) => {
+      let hasDuplicate = false;
       enriched.forEach((entry) => {
-        pendingFiles.set(fileKey(entry.file), entry);
+        const sig = fileSignature(entry.file.name, entry.file.size);
+        const duplicateByHash = !!entry.fileHash && (knownMemoryHashes.has(entry.fileHash) || pendingHashes.has(entry.fileHash));
+        const duplicateBySignature = knownMemorySignatures.has(sig) || pendingSignatures.has(sig);
+        const isDuplicate = duplicateByHash || duplicateBySignature;
+        hasDuplicate = hasDuplicate || isDuplicate;
+        pendingFiles.set(fileKey(entry.file), {
+          ...entry,
+          isDuplicate,
+        });
       });
       renderPendingFiles();
-      if (enriched.some((e) => e.isDuplicate)) {
+      if (hasDuplicate) {
         uploadStatus.textContent = "Warning: one or more selected files already exist in memory or queue.";
         uploadStatus.classList.add("status-warn");
       } else {
         uploadStatus.classList.remove("status-warn");
+        uploadStatus.textContent = "";
       }
     })
     .catch((err) => {
-      uploadStatus.textContent = `Could not inspect selected files: ${err.message}`;
+      // Keep already-queued files visible even if hash inspection fails.
+      uploadStatus.textContent = `Queued files. Duplicate hash check unavailable: ${err.message}`;
       uploadStatus.classList.add("status-warn");
     })
     .finally(() => {
