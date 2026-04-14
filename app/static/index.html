@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>StackAI RAG Chat</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        background: #f3f4f6;
+        color: #111827;
+      }
+      .container {
+        max-width: 980px;
+        margin: 24px auto;
+        padding: 0 16px;
+      }
+      .panel {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: 24px;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      input[type="text"], textarea {
+        width: 100%;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        padding: 10px;
+        font-size: 14px;
+        box-sizing: border-box;
+      }
+      button {
+        border: 0;
+        border-radius: 8px;
+        padding: 10px 14px;
+        background: #2563eb;
+        color: white;
+        cursor: pointer;
+      }
+      button:disabled {
+        background: #9ca3af;
+        cursor: not-allowed;
+      }
+      #chatLog {
+        height: 420px;
+        overflow-y: auto;
+        background: #f9fafb;
+        border-radius: 8px;
+        border: 1px solid #e5e7eb;
+        padding: 12px;
+      }
+      .msg {
+        margin-bottom: 12px;
+        padding: 10px;
+        border-radius: 8px;
+      }
+      .msg.user {
+        background: #dbeafe;
+      }
+      .msg.bot {
+        background: #ede9fe;
+      }
+      .meta {
+        color: #4b5563;
+        font-size: 12px;
+        margin-top: 4px;
+      }
+      pre {
+        white-space: pre-wrap;
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="panel">
+        <h1>StackAI RAG Chat</h1>
+        <div class="row">
+          <input id="pdfInput" type="file" accept=".pdf" multiple />
+          <button id="uploadBtn">Upload PDFs</button>
+        </div>
+        <div id="uploadStatus" class="meta"></div>
+      </div>
+
+      <div class="panel">
+        <div id="chatLog"></div>
+        <div class="row" style="margin-top: 10px;">
+          <textarea id="queryInput" rows="2" placeholder="Ask something about uploaded PDFs..."></textarea>
+          <button id="askBtn">Ask</button>
+        </div>
+      </div>
+    </div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
