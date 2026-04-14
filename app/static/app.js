@@ -9,23 +9,10 @@ const memorySummary = document.getElementById("memorySummary");
 const memoryFileList = document.getElementById("memoryFileList");
 const selectedSummary = document.getElementById("selectedSummary");
 const selectedFileList = document.getElementById("selectedFileList");
+
 const pendingFiles = new Map();
 const knownMemoryHashes = new Set();
 const knownMemorySignatures = new Set();
-
-async function sha256Hex(file) {
-  if (!globalThis.crypto || !globalThis.crypto.subtle) {
-    return "";
-  }
-  try {
-    const buffer = await file.arrayBuffer();
-    const digest = await crypto.subtle.digest("SHA-256", buffer);
-    const bytes = Array.from(new Uint8Array(digest));
-    return bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
-  } catch (_) {
-    return "";
-  }
-}
 
 function escapeHtml(text) {
   return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
@@ -137,10 +124,10 @@ function renderPendingFiles() {
   }
   selectedFileList.innerHTML = "";
   entries.forEach((entry) => {
-    const item = document.createElement("div");
-    item.className = "file-item";
     const sizeMb = (entry.file.size / (1024 * 1024)).toFixed(2);
     const duplicateTag = entry.isDuplicate ? " [already uploaded]" : "";
+    const item = document.createElement("div");
+    item.className = "file-item";
     item.textContent = `${entry.file.name} (${sizeMb} MB)${duplicateTag}`;
     selectedFileList.appendChild(item);
   });
@@ -149,14 +136,12 @@ function renderPendingFiles() {
 function renderMemoryFiles(data) {
   knownMemoryHashes.clear();
   knownMemorySignatures.clear();
-  for (const file of data.files || []) {
+  (data.files || []).forEach((file) => {
     if (file.file_hash) {
       knownMemoryHashes.add(file.file_hash);
     }
-    if (file.filename) {
-      knownMemorySignatures.add(fileSignature(file.filename, file.file_size_bytes));
-    }
-  }
+    knownMemorySignatures.add(fileSignature(file.filename, file.file_size_bytes));
+  });
 
   memorySummary.textContent = `In-memory documents: ${data.total_documents} | Indexed chunks: ${data.total_chunks}`;
   if (!data.files || data.files.length === 0) {
@@ -177,72 +162,82 @@ async function refreshMemoryFiles() {
   if (!res.ok) {
     throw new Error("Could not fetch file memory.");
   }
-  const data = await res.json();
-  renderMemoryFiles(data);
+  renderMemoryFiles(await res.json());
 }
 
-pdfInput.addEventListener("change", () => {
+async function sha256Hex(file) {
+  if (!globalThis.crypto || !globalThis.crypto.subtle) {
+    return "";
+  }
+  try {
+    const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+    const bytes = Array.from(new Uint8Array(digest));
+    return bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
+  } catch (_) {
+    return "";
+  }
+}
+
+async function clearMemory() {
+  const res = await fetch("/memory/files", { method: "DELETE" });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(txt || "Failed to clear files");
+  }
+  renderMemoryFiles(await res.json());
+}
+
+pdfInput.addEventListener("change", async () => {
   const chosen = Array.from(pdfInput.files);
-  const pendingHashes = new Set(Array.from(pendingFiles.values()).map((entry) => entry.fileHash));
+  if (chosen.length === 0) {
+    return;
+  }
   const pendingSignatures = new Set(
     Array.from(pendingFiles.values()).map((entry) => fileSignature(entry.file.name, entry.file.size))
   );
 
-  // Add files immediately so UI never appears broken.
-  const provisionalEntries = chosen.map((file) => {
-    const sig = fileSignature(file.name, file.size);
-    return {
+  // Show queued files immediately.
+  chosen.forEach((file) => {
+    const key = fileKey(file);
+    const signature = fileSignature(file.name, file.size);
+    pendingFiles.set(key, {
       file,
       fileHash: "",
-      isDuplicate: knownMemorySignatures.has(sig) || pendingSignatures.has(sig),
-    };
-  });
-  provisionalEntries.forEach((entry) => {
-    pendingFiles.set(fileKey(entry.file), entry);
+      isDuplicate: knownMemorySignatures.has(signature) || pendingSignatures.has(signature),
+    });
+    pendingSignatures.add(signature);
   });
   renderPendingFiles();
+  uploadStatus.classList.remove("status-warn");
+  uploadStatus.textContent = `Queued ${chosen.length} file${chosen.length === 1 ? "" : "s"} for upload.`;
 
-  Promise.all(
-    chosen.map(async (file) => {
-      const hash = await sha256Hex(file);
-      return {
-        file,
-        fileHash: hash,
-        isDuplicate: false,
-      };
-    })
-  )
-    .then((enriched) => {
-      let hasDuplicate = false;
-      enriched.forEach((entry) => {
-        const sig = fileSignature(entry.file.name, entry.file.size);
-        const duplicateByHash = !!entry.fileHash && (knownMemoryHashes.has(entry.fileHash) || pendingHashes.has(entry.fileHash));
-        const duplicateBySignature = knownMemorySignatures.has(sig) || pendingSignatures.has(sig);
-        const isDuplicate = duplicateByHash || duplicateBySignature;
-        hasDuplicate = hasDuplicate || isDuplicate;
-        pendingFiles.set(fileKey(entry.file), {
-          ...entry,
-          isDuplicate,
-        });
-      });
-      renderPendingFiles();
-      if (hasDuplicate) {
-        uploadStatus.textContent = "Warning: one or more selected files already exist in memory or queue.";
-        uploadStatus.classList.add("status-warn");
-      } else {
-        uploadStatus.classList.remove("status-warn");
-        uploadStatus.textContent = "";
-      }
-    })
-    .catch((err) => {
-      // Keep already-queued files visible even if hash inspection fails.
-      uploadStatus.textContent = `Queued files. Duplicate hash check unavailable: ${err.message}`;
-      uploadStatus.classList.add("status-warn");
-    })
-    .finally(() => {
-      // Allow selecting same filenames again in later batches.
-      pdfInput.value = "";
-    });
+  // Optional async hash pass for better duplicate detection.
+  const updates = await Promise.all(
+    chosen.map(async (file) => ({ file, hash: await sha256Hex(file) }))
+  );
+  let hasDuplicate = false;
+  updates.forEach(({ file, hash }) => {
+    const key = fileKey(file);
+    const existing = pendingFiles.get(key);
+    if (!existing) return;
+    const duplicateByHash = !!hash && knownMemoryHashes.has(hash);
+    const updated = {
+      ...existing,
+      fileHash: hash,
+      isDuplicate: existing.isDuplicate || duplicateByHash,
+    };
+    if (updated.isDuplicate) {
+      hasDuplicate = true;
+    }
+    pendingFiles.set(key, updated);
+  });
+  renderPendingFiles();
+  if (hasDuplicate) {
+    uploadStatus.textContent = "Warning: one or more queued files may already exist in memory.";
+    uploadStatus.classList.add("status-warn");
+  }
+
+  pdfInput.value = "";
 });
 
 uploadBtn.addEventListener("click", async () => {
@@ -265,9 +260,7 @@ uploadBtn.addEventListener("click", async () => {
   uploadBtn.disabled = true;
   try {
     const form = new FormData();
-    entries.forEach((entry) => {
-      form.append("files", entry.file);
-    });
+    entries.forEach((entry) => form.append("files", entry.file));
     const res = await fetch("/ingest", {
       method: "POST",
       body: form,
@@ -278,10 +271,7 @@ uploadBtn.addEventListener("click", async () => {
     }
     const data = await res.json();
     const ingested = data.files
-      .map((f) => {
-        const reason = f.reason ? ` - ${f.reason}` : "";
-        return `${f.filename}: ${f.status} (${f.chunks} chunks)${reason}`;
-      })
+      .map((f) => `${f.filename}: ${f.status} (${f.chunks} chunks)${f.reason ? ` - ${f.reason}` : ""}`)
       .join(" | ");
     uploadStatus.textContent = `Indexed docs=${data.total_documents}, chunks=${data.total_chunks}. ${ingested}`;
     uploadStatus.classList.remove("status-warn");
@@ -299,13 +289,9 @@ uploadBtn.addEventListener("click", async () => {
 clearFilesBtn.addEventListener("click", async () => {
   clearFilesBtn.disabled = true;
   try {
-    const res = await fetch("/memory/files", { method: "DELETE" });
-    if (!res.ok) {
-      const txt = await res.text();
-      throw new Error(txt || "Failed to clear files");
-    }
-    const data = await res.json();
-    renderMemoryFiles(data);
+    await clearMemory();
+    pendingFiles.clear();
+    renderPendingFiles();
     uploadStatus.textContent = "Cleared all in-memory files and index.";
     uploadStatus.classList.remove("status-warn");
   } catch (err) {
@@ -353,8 +339,23 @@ queryInput.addEventListener("keydown", (event) => {
   }
 });
 
-refreshMemoryFiles().catch((err) => {
-  memorySummary.textContent = `Memory status unavailable: ${err.message}`;
-  memoryFileList.textContent = "";
+// User requested clearing files when leaving or refreshing the page.
+window.addEventListener("pagehide", () => {
+  fetch("/memory/files", { method: "DELETE", keepalive: true }).catch(() => {});
 });
-renderPendingFiles();
+
+(async () => {
+  try {
+    await clearMemory();
+    uploadStatus.textContent = "Started a fresh session: previous uploaded files were cleared.";
+  } catch (_) {
+    // keep going even if clear fails
+  }
+  try {
+    await refreshMemoryFiles();
+  } catch (err) {
+    memorySummary.textContent = `Memory status unavailable: ${err.message}`;
+    memoryFileList.textContent = "";
+  }
+  renderPendingFiles();
+})();
