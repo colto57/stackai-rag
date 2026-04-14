@@ -26,10 +26,13 @@ class GenerationService:
                 return "I cannot provide legal advice. Please consult a qualified legal professional."
         if intent in {"greeting", "small_talk"}:
             return "Hello! I can answer questions from your uploaded PDF knowledge base. Upload files, then ask a question."
-        return await self._chat_completion(
+        answer = await self._chat_completion(
             system_prompt="You are a concise assistant.",
             user_prompt=query,
         )
+        if not answer:
+            return "I could not generate a response from the language model right now. Please try again."
+        return answer
 
     async def grounded_answer(
         self,
@@ -63,13 +66,17 @@ class GenerationService:
             "Answer with citations."
         )
         answer = await self._chat_completion(system_prompt=system_prompt, user_prompt=user_prompt)
+        if not answer:
+            # Fallback to extractive response when chat completion is unavailable.
+            fallback = self._extractive_fallback(query, results)
+            return fallback, [f"[{i}] {r['filename']} p.{r['page_start']}-{r['page_end']}" for i, r in enumerate(results, start=1)]
         checked = self._evidence_check(answer, results)
         citations = [f"[{i}] {r['filename']} p.{r['page_start']}-{r['page_end']}" for i, r in enumerate(results, start=1)]
         return checked, citations
 
     async def _chat_completion(self, system_prompt: str, user_prompt: str) -> str:
         if not self.settings.mistral_api_key:
-            return "Mistral API key not configured. Set MISTRAL_API_KEY to enable generation."
+            return ""
         payload: dict[str, Any] = {
             "model": self.settings.mistral_chat_model,
             "messages": [
@@ -82,11 +89,14 @@ class GenerationService:
             "Authorization": f"Bearer {self.settings.mistral_api_key}",
             "Content-Type": "application/json",
         }
-        async with httpx.AsyncClient(timeout=90) as client:
-            response = await client.post(self.url, headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
-        return data["choices"][0]["message"]["content"].strip()
+        try:
+            async with httpx.AsyncClient(timeout=90) as client:
+                response = await client.post(self.url, headers=headers, json=payload)
+                response.raise_for_status()
+                data = response.json()
+            return data["choices"][0]["message"]["content"].strip()
+        except Exception:
+            return ""
 
     def _evidence_check(self, answer: str, results: list[dict[str, Any]]) -> str:
         context_words = set()
@@ -105,4 +115,19 @@ class GenerationService:
             else:
                 validated.append(sentence)
         return " ".join(validated)
+
+    def _extractive_fallback(self, query: str, results: list[dict[str, Any]]) -> str:
+        snippets: list[str] = []
+        for i, item in enumerate(results[:3], start=1):
+            snippet = item["text"].strip().replace("\n", " ")
+            if len(snippet) > 260:
+                snippet = snippet[:260].rstrip() + "..."
+            snippets.append(f"[{i}] {snippet}")
+        if not snippets:
+            return "insufficient evidence"
+        return (
+            "I could not reach the language model, so here are the most relevant extracted passages:\n"
+            + "\n".join(snippets)
+            + "\n\nPlease retry once the API key/model access is valid."
+        )
 
