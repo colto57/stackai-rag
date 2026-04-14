@@ -7,6 +7,9 @@ const uploadStatus = document.getElementById("uploadStatus");
 const chatLog = document.getElementById("chatLog");
 const memorySummary = document.getElementById("memorySummary");
 const memoryFileList = document.getElementById("memoryFileList");
+const selectedSummary = document.getElementById("selectedSummary");
+const selectedFileList = document.getElementById("selectedFileList");
+const pendingFiles = new Map();
 
 function appendMessage(role, content, metaText = "") {
   const div = document.createElement("div");
@@ -22,6 +25,27 @@ function appendMessage(role, content, metaText = "") {
   }
   chatLog.appendChild(div);
   chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+function fileKey(file) {
+  return `${file.name}__${file.size}__${file.lastModified}`;
+}
+
+function renderPendingFiles() {
+  const files = Array.from(pendingFiles.values());
+  selectedSummary.textContent = `Pending upload: ${files.length} file${files.length === 1 ? "" : "s"}`;
+  if (files.length === 0) {
+    selectedFileList.textContent = "No files selected for upload.";
+    return;
+  }
+  selectedFileList.innerHTML = "";
+  files.forEach((file) => {
+    const item = document.createElement("div");
+    item.className = "file-item";
+    const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
+    item.textContent = `${file.name} (${sizeMb} MB)`;
+    selectedFileList.appendChild(item);
+  });
 }
 
 function renderMemoryFiles(data) {
@@ -49,14 +73,15 @@ async function refreshMemoryFiles() {
 }
 
 uploadBtn.addEventListener("click", async () => {
-  if (!pdfInput.files.length) {
+  const filesToUpload = Array.from(pendingFiles.values());
+  if (!filesToUpload.length) {
     uploadStatus.textContent = "Select at least one PDF file.";
     return;
   }
   uploadBtn.disabled = true;
   try {
     const form = new FormData();
-    for (const file of pdfInput.files) {
+    for (const file of filesToUpload) {
       form.append("files", file);
     }
     const res = await fetch("/ingest", {
@@ -75,6 +100,9 @@ uploadBtn.addEventListener("click", async () => {
       })
       .join(" | ");
     uploadStatus.textContent = `Indexed docs=${data.total_documents}, chunks=${data.total_chunks}. ${ingested}`;
+    pendingFiles.clear();
+    pdfInput.value = "";
+    renderPendingFiles();
     await refreshMemoryFiles();
   } catch (err) {
     uploadStatus.textContent = `Upload error: ${err.message}`;
@@ -99,6 +127,15 @@ clearFilesBtn.addEventListener("click", async () => {
   } finally {
     clearFilesBtn.disabled = false;
   }
+});
+
+pdfInput.addEventListener("change", () => {
+  for (const file of Array.from(pdfInput.files)) {
+    pendingFiles.set(fileKey(file), file);
+  }
+  renderPendingFiles();
+  // Allow selecting the same file again later if user clears queue.
+  pdfInput.value = "";
 });
 
 askBtn.addEventListener("click", async () => {
@@ -133,3 +170,5 @@ refreshMemoryFiles().catch((err) => {
   memorySummary.textContent = `Memory status unavailable: ${err.message}`;
   memoryFileList.textContent = "";
 });
+
+renderPendingFiles();

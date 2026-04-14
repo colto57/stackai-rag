@@ -45,7 +45,7 @@ async def home() -> FileResponse:
 async def ingest(files: list[UploadFile] = File(...)) -> IngestResponse:
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded.")
-    if len(files) > settings.max_upload_files:
+    if settings.max_upload_files > 0 and len(files) > settings.max_upload_files:
         raise HTTPException(status_code=400, detail=f"Max {settings.max_upload_files} files allowed per request.")
 
     results: list[FileIngestResult] = []

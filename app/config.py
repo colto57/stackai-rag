@@ -28,7 +28,8 @@ def load_settings() -> Settings:
         mistral_chat_model=os.getenv("MISTRAL_CHAT_MODEL", "mistral-small-latest").strip(),
         mistral_embed_model=os.getenv("MISTRAL_EMBED_MODEL", "mistral-embed").strip(),
         data_dir=os.getenv("DATA_DIR", "data").strip(),
-        max_upload_files=int(os.getenv("MAX_UPLOAD_FILES", "10")),
+        # 0 or negative means unlimited file count per request.
+        max_upload_files=int(os.getenv("MAX_UPLOAD_FILES", "0")),
         max_upload_size_mb=int(os.getenv("MAX_UPLOAD_SIZE_MB", "20")),
         default_top_k=int(os.getenv("DEFAULT_TOP_K", "5")),
         max_top_k=int(os.getenv("MAX_TOP_K", "10")),

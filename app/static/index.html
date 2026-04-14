@@ -138,6 +138,14 @@
         overflow-y: auto;
         font-size: 13px;
       }
+      .selected-files {
+        margin-top: 10px;
+      }
+      .hint {
+        color: var(--text-soft);
+        font-size: 12px;
+        margin-top: 6px;
+      }
       .file-item {
         margin-bottom: 7px;
         padding: 6px 8px;
@@ -178,6 +186,9 @@
           <button id="uploadBtn">Upload PDFs</button>
           <button id="clearFilesBtn" class="secondary-btn">Clear Files</button>
         </div>
+        <div id="selectedSummary" class="meta">Pending upload: 0 files</div>
+        <div id="selectedFileList" class="file-list selected-files">No files selected for upload.</div>
+        <div class="hint">Tip: you can click "Choose Files" multiple times to keep adding files before uploading.</div>
         <div id="uploadStatus" class="meta"></div>
         <div id="memorySummary" class="meta"></div>
         <div id="memoryFileList" class="file-list"></div>
