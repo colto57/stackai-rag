@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from uuid import uuid4
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -18,11 +19,9 @@ from app.services.storage import JsonStore
 
 
 settings = load_settings()
-store = JsonStore(settings.data_dir)
 embedder = MistralEmbeddingClient(settings.mistral_api_key, settings.mistral_embed_model)
-ingestion = IngestionService(settings, store, embedder)
-retrieval = RetrievalService(settings, store, embedder)
 generation = GenerationService(settings)
+stores_by_session: dict[str, JsonStore] = {}
 
 app = FastAPI(title="StackAI RAG Backend")
 app.add_middleware(
@@ -36,18 +35,45 @@ static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 
+def _store_for_session(session_id: str) -> JsonStore:
+    if session_id not in stores_by_session:
+        session_data_dir = str(Path(settings.data_dir) / "sessions" / session_id)
+        stores_by_session[session_id] = JsonStore(session_data_dir)
+    return stores_by_session[session_id]
+
+
+@app.middleware("http")
+async def session_middleware(request: Request, call_next):
+    session_id = request.cookies.get("session_id")
+    if not session_id:
+        session_id = uuid4().hex
+    request.state.session_id = session_id
+    response = await call_next(request)
+    response.set_cookie(
+        key="session_id",
+        value=session_id,
+        httponly=True,
+        samesite="lax",
+        secure=False,
+        max_age=7 * 24 * 60 * 60,
+    )
+    return response
+
+
 @app.get("/")
 async def home() -> FileResponse:
     return FileResponse(static_dir / "index.html")
 
 
 @app.post("/ingest", response_model=IngestResponse)
-async def ingest(files: list[UploadFile] = File(...)) -> IngestResponse:
+async def ingest(request: Request, files: list[UploadFile] = File(...)) -> IngestResponse:
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded.")
     if settings.max_upload_files > 0 and len(files) > settings.max_upload_files:
         raise HTTPException(status_code=400, detail=f"Max {settings.max_upload_files} files allowed per request.")
 
+    store = _store_for_session(request.state.session_id)
+    ingestion = IngestionService(settings, store, embedder)
     results: list[FileIngestResult] = []
     for upload in files:
         filename = upload.filename or "file.pdf"
@@ -84,7 +110,8 @@ async def ingest(files: list[UploadFile] = File(...)) -> IngestResponse:
 
 
 @app.get("/memory/files", response_model=MemoryFilesResponse)
-async def list_memory_files() -> MemoryFilesResponse:
+async def list_memory_files(request: Request) -> MemoryFilesResponse:
+    store = _store_for_session(request.state.session_id)
     docs = store.list_documents()
     stats = store.stats()
     return MemoryFilesResponse(
@@ -105,16 +132,19 @@ async def list_memory_files() -> MemoryFilesResponse:
 
 
 @app.delete("/memory/files", response_model=MemoryFilesResponse)
-async def clear_memory_files() -> MemoryFilesResponse:
+async def clear_memory_files(request: Request) -> MemoryFilesResponse:
+    store = _store_for_session(request.state.session_id)
     store.clear_all()
     stats = store.stats()
     return MemoryFilesResponse(files=[], total_documents=stats.total_documents, total_chunks=stats.total_chunks)
 
 
 @app.post("/query", response_model=QueryResponse)
-async def query(req: QueryRequest) -> QueryResponse:
+async def query(request: Request, req: QueryRequest) -> QueryResponse:
     intent_result = detect_intent(req.query)
     top_k = min(req.top_k or settings.default_top_k, settings.max_top_k)
+    store = _store_for_session(request.state.session_id)
+    retrieval = RetrievalService(settings, store, embedder)
 
     if not intent_result.use_kb:
         answer = await generation.direct_reply(req.query, intent_result.intent)

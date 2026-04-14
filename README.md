@@ -224,6 +224,10 @@ pytest -q
   - modular services allow replacement of JSON storage with DB/vector infra later,
   - configurable retrieval/chunking knobs,
   - can add async task queue for heavy ingestion workloads.
+- Multi-user isolation:
+  - each browser receives a `session_id` cookie,
+  - ingestion/query/memory operations are scoped to that session only,
+  - users sharing the same public URL do not see each other's uploaded PDFs.
 
 ## Assignment Constraints Compliance
 
