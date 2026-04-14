@@ -181,6 +181,23 @@ uvicorn app.main:app --reload
 - API docs: `http://127.0.0.1:8000/docs`
 - Chat UI: `http://127.0.0.1:8000/`
 
+## Public Link Deployment (Render)
+
+If you want anyone to use the app with one URL, deploy to Render:
+
+1. Push this repo to GitHub (already done).
+2. Go to [Render](https://render.com/) and create a new account/service.
+3. Choose **New +** -> **Blueprint** and select this repository.
+4. Render will detect `render.yaml` and create the web service.
+5. In Render service settings, set:
+   - `MISTRAL_API_KEY` = your working key
+6. Click deploy and wait for build to complete.
+7. Share your Render URL (for example: `https://stackai-rag.onrender.com/`).
+
+Notes:
+- Free tier can sleep after inactivity; first request may be slow.
+- Uploaded PDFs are stored on ephemeral disk in this implementation, so storage may reset after restarts/redeploys.
+
 ## Test
 
 ```bash

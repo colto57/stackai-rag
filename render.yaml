@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: stackai-rag
+    env: python
+    plan: free
+    autoDeploy: true
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: MISTRAL_CHAT_MODEL
+        value: mistral-small-latest
+      - key: MISTRAL_EMBED_MODEL
+        value: mistral-embed
+      - key: DEFAULT_TOP_K
+        value: "5"
+      - key: MAX_TOP_K
+        value: "10"
+      - key: MIN_EVIDENCE_SCORE
+        value: "0.4"
