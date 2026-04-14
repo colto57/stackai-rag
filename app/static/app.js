@@ -11,16 +11,101 @@ const selectedSummary = document.getElementById("selectedSummary");
 const selectedFileList = document.getElementById("selectedFileList");
 const pendingFiles = new Map();
 
+function escapeHtml(text) {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function applyInlineMarkdown(text) {
+  return text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+}
+
+function renderAssistantContent(text) {
+  const lines = text.split(/\r?\n/);
+  const htmlParts = [];
+  let inUl = false;
+  let inOl = false;
+
+  function closeLists() {
+    if (inUl) {
+      htmlParts.push("</ul>");
+      inUl = false;
+    }
+    if (inOl) {
+      htmlParts.push("</ol>");
+      inOl = false;
+    }
+  }
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      closeLists();
+      continue;
+    }
+
+    const bulletMatch = line.match(/^[-*]\s+(.+)/);
+    if (bulletMatch) {
+      if (inOl) {
+        htmlParts.push("</ol>");
+        inOl = false;
+      }
+      if (!inUl) {
+        htmlParts.push("<ul>");
+        inUl = true;
+      }
+      htmlParts.push(`<li>${applyInlineMarkdown(escapeHtml(bulletMatch[1]))}</li>`);
+      continue;
+    }
+
+    const numberedMatch = line.match(/^\d+\.\s+(.+)/);
+    if (numberedMatch) {
+      if (inUl) {
+        htmlParts.push("</ul>");
+        inUl = false;
+      }
+      if (!inOl) {
+        htmlParts.push("<ol>");
+        inOl = true;
+      }
+      htmlParts.push(`<li>${applyInlineMarkdown(escapeHtml(numberedMatch[1]))}</li>`);
+      continue;
+    }
+
+    closeLists();
+    htmlParts.push(`<p>${applyInlineMarkdown(escapeHtml(line))}</p>`);
+  }
+
+  closeLists();
+  return htmlParts.join("");
+}
+
+function prettifyMeta(metaText) {
+  return metaText
+    .replaceAll(" | ", "\n")
+    .replaceAll("; ", "\n- ");
+}
+
 function appendMessage(role, content, metaText = "") {
   const div = document.createElement("div");
   div.className = `msg ${role}`;
-  const body = document.createElement("pre");
-  body.textContent = content;
+  const body = document.createElement("div");
+  body.className = "msg-content";
+  if (role === "bot") {
+    body.innerHTML = renderAssistantContent(content);
+  } else {
+    const pre = document.createElement("pre");
+    pre.textContent = content;
+    body.appendChild(pre);
+  }
   div.appendChild(body);
   if (metaText) {
     const meta = document.createElement("div");
     meta.className = "meta";
-    meta.textContent = metaText;
+    meta.style.whiteSpace = "pre-line";
+    meta.textContent = role === "bot" ? prettifyMeta(metaText) : metaText;
     div.appendChild(meta);
   }
   chatLog.appendChild(div);
@@ -163,6 +248,15 @@ askBtn.addEventListener("click", async () => {
     appendMessage("bot", `Error: ${err.message}`);
   } finally {
     askBtn.disabled = false;
+  }
+});
+
+queryInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    if (!askBtn.disabled) {
+      askBtn.click();
+    }
   }
 });
 
