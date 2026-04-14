@@ -38,16 +38,16 @@ flowchart TD
     embed --> store[LocalJSONStorage]
 
     queryApi --> intent[IntentDetectionAndPolicy]
-    intent -->|\"search_required\"| rewrite[QueryRewrite]
-    intent -->|\"no_search\"| direct[DirectReplyTemplate]
+    intent -->|"search_required"| rewrite[QueryRewrite]
+    intent -->|"no_search"| direct[DirectReplyTemplate]
 
     rewrite --> semantic[SemanticSearchCosine]
     rewrite --> keyword[KeywordSearchBM25Like]
     semantic --> merge[HybridFusionAndRerank]
     keyword --> merge
     merge --> gate[EvidenceThresholdGate]
-    gate -->|\"pass\"| generate[GroundedAnswerGeneration]
-    gate -->|\"fail\"| insufficient[InsufficientEvidence]
+    gate -->|"pass"| generate[GroundedAnswerGeneration]
+    gate -->|"fail"| insufficient[InsufficientEvidence]
     generate --> filter[HallucinationEvidenceFilter]
     filter --> queryApi
     direct --> queryApi
