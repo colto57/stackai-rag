@@ -152,6 +152,22 @@ async def query(request: Request, req: QueryRequest) -> QueryResponse:
     store = _store_for_session(request.state.session_id)
     retrieval = RetrievalService(settings, store, embedder)
 
+    if intent_result.intent == "file_inventory":
+        docs = store.list_documents()
+        if not docs:
+            answer = "I currently have no uploaded files in this session."
+        else:
+            lines = ["I currently have access to these files in this session:"]
+            for idx, doc in enumerate(docs, start=1):
+                lines.append(f"{idx}. {doc.get('filename', 'unknown')} ({doc.get('pages', 0)} pages)")
+            answer = "\n".join(lines)
+        return QueryResponse(
+            answer=answer,
+            status="ok",
+            intent=intent_result.intent,
+            used_knowledge_base=False,
+        )
+
     if not intent_result.use_kb:
         answer = await generation.direct_reply(req.query, intent_result.intent)
         return QueryResponse(
