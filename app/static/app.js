@@ -339,17 +339,16 @@ queryInput.addEventListener("keydown", (event) => {
   }
 });
 
-// User requested clearing files when leaving or refreshing the page.
-window.addEventListener("pagehide", () => {
-  fetch("/memory/files", { method: "DELETE", keepalive: true }).catch(() => {});
-});
-
 (async () => {
-  try {
-    await clearMemory();
-    uploadStatus.textContent = "Started a fresh session: previous uploaded files were cleared.";
-  } catch (_) {
-    // keep going even if clear fails
+  const navEntry = performance.getEntriesByType("navigation")[0];
+  const isReload = navEntry && navEntry.type === "reload";
+  if (isReload) {
+    try {
+      await clearMemory();
+      uploadStatus.textContent = "Session reset after refresh: uploaded files were cleared.";
+    } catch (_) {
+      // Keep going even if clear fails.
+    }
   }
   try {
     await refreshMemoryFiles();

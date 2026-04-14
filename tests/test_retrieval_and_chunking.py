@@ -2,6 +2,8 @@ from app.config import Settings
 from app.services.pdf_ingest import chunk_pages
 from app.services.query_processing import detect_intent, rewrite_query_for_retrieval
 from app.services.retrieval import cosine_similarity
+from app.services.storage import JsonStore
+from app.services.pdf_ingest import IngestionService
 
 
 def _settings() -> Settings:
@@ -55,4 +57,16 @@ def test_cosine_similarity() -> None:
     c = [0.0, 1.0, 0.0]
     assert cosine_similarity(a, b) > 0.99
     assert cosine_similarity(a, c) < 0.01
+
+
+def test_storage_keeps_distinct_documents_for_same_millisecond_ids(tmp_path) -> None:
+    # Regression guard for prior timestamp-based doc_id collisions.
+    store = JsonStore(str(tmp_path))
+    doc1 = {"doc_id": "doc_a", "filename": "a.pdf", "pages": 1, "created_at": "t1"}
+    doc2 = {"doc_id": "doc_b", "filename": "b.pdf", "pages": 1, "created_at": "t2"}
+    store.upsert_document(doc1, [{"chunk_id": "a1", "doc_id": "doc_a", "text": "x"}])
+    store.upsert_document(doc2, [{"chunk_id": "b1", "doc_id": "doc_b", "text": "y"}])
+    docs = store.list_documents()
+    names = {d["filename"] for d in docs}
+    assert names == {"a.pdf", "b.pdf"}
 

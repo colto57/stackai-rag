@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import re
 import hashlib
+from uuid import uuid4
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -100,7 +101,8 @@ class IngestionService:
         raw_chunks = chunk_pages(page_texts, self.settings)
         embeddings = await self.embedder.embed_texts([c["text"] for c in raw_chunks])
         now = datetime.now(timezone.utc).isoformat()
-        doc_id = f"doc_{int(datetime.now(timezone.utc).timestamp() * 1000)}"
+        # Use UUID to avoid doc_id collisions during rapid multi-file ingestion.
+        doc_id = f"doc_{uuid4().hex}"
         self.store.save_pdf(filename, content)
 
         chunks: list[dict[str, Any]] = []
