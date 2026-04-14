@@ -54,16 +54,19 @@ class GenerationService:
             style = "Use concise paragraphs."
 
         system_prompt = (
-            "You answer only from provided context. "
+            "You are a strict grounded QA assistant. "
+            "Use only the provided context and do not use prior knowledge. "
+            "Do not invent definitions, expansions, or background details not explicitly present in context. "
             "Every factual claim must include citation markers like [1], [2]. "
-            "If evidence is missing, explicitly say insufficient evidence."
+            "If evidence is missing or ambiguous, reply exactly: insufficient evidence."
         )
         user_prompt = (
             f"User query: {query}\n"
             f"Retrieval query: {rewritten_query}\n"
             f"Style instruction: {style}\n\n"
             f"Context:\n{context}\n\n"
-            "Answer with citations."
+            "Answer with citations only from this context. "
+            "If user asks what a term means in the document, describe only what the document says about it."
         )
         answer = await self._chat_completion(system_prompt=system_prompt, user_prompt=user_prompt)
         if not answer:
@@ -71,6 +74,8 @@ class GenerationService:
             fallback = self._extractive_fallback(query, results)
             return fallback, [f"[{i}] {r['filename']} p.{r['page_start']}-{r['page_end']}" for i, r in enumerate(results, start=1)]
         checked = self._evidence_check(answer, results)
+        if self._is_insufficiently_supported(checked):
+            checked = "insufficient evidence"
         citations = [f"[{i}] {r['filename']} p.{r['page_start']}-{r['page_end']}" for i, r in enumerate(results, start=1)]
         return checked, citations
 
@@ -130,4 +135,14 @@ class GenerationService:
             + "\n".join(snippets)
             + "\n\nPlease retry once the API key/model access is valid."
         )
+
+    def _is_insufficiently_supported(self, answer: str) -> bool:
+        text = (answer or "").strip().lower()
+        if not text:
+            return True
+        if text == "insufficient evidence":
+            return True
+        if "[unsupported claim removed by evidence filter.]" in text:
+            return True
+        return False
 

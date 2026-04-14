@@ -1,7 +1,7 @@
 from app.config import Settings
 from app.services.pdf_ingest import chunk_pages
 from app.services.query_processing import detect_intent, rewrite_query_for_retrieval
-from app.services.retrieval import cosine_similarity
+from app.services.retrieval import acronym_tokens, cosine_similarity
 from app.services.storage import JsonStore
 from app.services.pdf_ingest import IngestionService
 
@@ -70,4 +70,8 @@ def test_storage_keeps_distinct_documents_for_same_millisecond_ids(tmp_path) -> 
     docs = store.list_documents()
     names = {d["filename"] for d in docs}
     assert names == {"a.pdf", "b.pdf"}
+
+
+def test_acronym_token_extraction() -> None:
+    assert acronym_tokens("What is README in this PDF?") == ["readme"]
 

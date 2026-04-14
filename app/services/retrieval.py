@@ -11,10 +11,17 @@ from app.services.storage import JsonStore
 
 
 _TOKEN_RE = re.compile(r"[a-zA-Z0-9]+")
+_ACRONYM_RE = re.compile(r"\b[A-Z]{3,}\b")
+_IGNORED_ACRONYMS = {"pdf", "api", "llm", "rag"}
 
 
 def _tokens(text: str) -> list[str]:
     return _TOKEN_RE.findall(text.lower())
+
+
+def acronym_tokens(query: str) -> list[str]:
+    tokens = [m.group(0).lower() for m in _ACRONYM_RE.finditer(query or "")]
+    return [t for t in tokens if t not in _IGNORED_ACRONYMS]
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -44,6 +51,17 @@ class RetrievalService:
         keyword_scores = self._keyword_scores(query, chunks)
         fused = self._hybrid_fuse(chunks, semantic_scores, keyword_scores)
         reranked = self._rerank(fused)
+        acronyms = acronym_tokens(query)
+        acronym_filtered_count = 0
+        if acronyms:
+            filtered = [
+                item
+                for item in reranked
+                if any(acr in item.get("text", "").lower() for acr in acronyms)
+            ]
+            if filtered:
+                acronym_filtered_count = len(filtered)
+                reranked = filtered
         results = reranked[:top_k]
         return {
             "results": results,
@@ -51,6 +69,8 @@ class RetrievalService:
                 "semantic_weight": self.settings.semantic_weight,
                 "keyword_weight": self.settings.keyword_weight,
                 "candidate_count": len(chunks),
+                "acronym_tokens": acronyms,
+                "acronym_filtered_count": acronym_filtered_count,
             },
         }
 
