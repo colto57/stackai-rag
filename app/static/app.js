@@ -41,7 +41,12 @@ uploadBtn.addEventListener("click", async () => {
       throw new Error(txt || "Upload failed");
     }
     const data = await res.json();
-    const ingested = data.files.map((f) => `${f.filename}: ${f.status} (${f.chunks} chunks)`).join(" | ");
+    const ingested = data.files
+      .map((f) => {
+        const reason = f.reason ? ` - ${f.reason}` : "";
+        return `${f.filename}: ${f.status} (${f.chunks} chunks)${reason}`;
+      })
+      .join(" | ");
     uploadStatus.textContent = `Indexed docs=${data.total_documents}, chunks=${data.total_chunks}. ${ingested}`;
   } catch (err) {
     uploadStatus.textContent = `Upload error: ${err.message}`;

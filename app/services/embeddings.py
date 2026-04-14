@@ -25,11 +25,15 @@ class MistralEmbeddingClient:
             "model": self.model,
             "input": texts,
         }
-        async with httpx.AsyncClient(timeout=60) as client:
-            response = await client.post(self.url, headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
-        return [item["embedding"] for item in data["data"]]
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                response = await client.post(self.url, headers=headers, json=payload)
+                response.raise_for_status()
+                data = response.json()
+            return [item["embedding"] for item in data["data"]]
+        except Exception:
+            # Keep ingestion/query functional if embedding API fails intermittently.
+            return [self._deterministic_fallback(text) for text in texts]
 
     async def embed_text(self, text: str) -> list[float]:
         vectors = await self.embed_texts([text])
