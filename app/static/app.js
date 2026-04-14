@@ -1,9 +1,12 @@
 const uploadBtn = document.getElementById("uploadBtn");
+const clearFilesBtn = document.getElementById("clearFilesBtn");
 const askBtn = document.getElementById("askBtn");
 const pdfInput = document.getElementById("pdfInput");
 const queryInput = document.getElementById("queryInput");
 const uploadStatus = document.getElementById("uploadStatus");
 const chatLog = document.getElementById("chatLog");
+const memorySummary = document.getElementById("memorySummary");
+const memoryFileList = document.getElementById("memoryFileList");
 
 function appendMessage(role, content, metaText = "") {
   const div = document.createElement("div");
@@ -19,6 +22,30 @@ function appendMessage(role, content, metaText = "") {
   }
   chatLog.appendChild(div);
   chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+function renderMemoryFiles(data) {
+  memorySummary.textContent = `In-memory documents: ${data.total_documents} | Indexed chunks: ${data.total_chunks}`;
+  if (!data.files || data.files.length === 0) {
+    memoryFileList.textContent = "No files currently in memory.";
+    return;
+  }
+  memoryFileList.innerHTML = "";
+  data.files.forEach((file) => {
+    const div = document.createElement("div");
+    div.className = "file-item";
+    div.textContent = `${file.filename} (${file.pages} pages)`;
+    memoryFileList.appendChild(div);
+  });
+}
+
+async function refreshMemoryFiles() {
+  const res = await fetch("/memory/files");
+  if (!res.ok) {
+    throw new Error("Could not fetch file memory.");
+  }
+  const data = await res.json();
+  renderMemoryFiles(data);
 }
 
 uploadBtn.addEventListener("click", async () => {
@@ -48,10 +75,29 @@ uploadBtn.addEventListener("click", async () => {
       })
       .join(" | ");
     uploadStatus.textContent = `Indexed docs=${data.total_documents}, chunks=${data.total_chunks}. ${ingested}`;
+    await refreshMemoryFiles();
   } catch (err) {
     uploadStatus.textContent = `Upload error: ${err.message}`;
   } finally {
     uploadBtn.disabled = false;
+  }
+});
+
+clearFilesBtn.addEventListener("click", async () => {
+  clearFilesBtn.disabled = true;
+  try {
+    const res = await fetch("/memory/files", { method: "DELETE" });
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(txt || "Failed to clear files");
+    }
+    const data = await res.json();
+    renderMemoryFiles(data);
+    uploadStatus.textContent = "Cleared all in-memory files and index.";
+  } catch (err) {
+    uploadStatus.textContent = `Clear error: ${err.message}`;
+  } finally {
+    clearFilesBtn.disabled = false;
   }
 });
 
@@ -81,4 +127,9 @@ askBtn.addEventListener("click", async () => {
   } finally {
     askBtn.disabled = false;
   }
+});
+
+refreshMemoryFiles().catch((err) => {
+  memorySummary.textContent = `Memory status unavailable: ${err.message}`;
+  memoryFileList.textContent = "";
 });

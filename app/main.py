@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import load_settings
-from app.models import Citation, FileIngestResult, IngestResponse, QueryRequest, QueryResponse
+from app.models import Citation, FileIngestResult, IngestResponse, MemoryFile, MemoryFilesResponse, QueryRequest, QueryResponse
 from app.services.embeddings import MistralEmbeddingClient
 from app.services.generation import GenerationService
 from app.services.pdf_ingest import IngestionService
@@ -81,6 +81,32 @@ async def ingest(files: list[UploadFile] = File(...)) -> IngestResponse:
 
     stats = store.stats()
     return IngestResponse(files=results, total_documents=stats.total_documents, total_chunks=stats.total_chunks)
+
+
+@app.get("/memory/files", response_model=MemoryFilesResponse)
+async def list_memory_files() -> MemoryFilesResponse:
+    docs = store.list_documents()
+    stats = store.stats()
+    return MemoryFilesResponse(
+        files=[
+            MemoryFile(
+                doc_id=doc["doc_id"],
+                filename=doc["filename"],
+                pages=doc["pages"],
+                created_at=doc.get("created_at"),
+            )
+            for doc in docs
+        ],
+        total_documents=stats.total_documents,
+        total_chunks=stats.total_chunks,
+    )
+
+
+@app.delete("/memory/files", response_model=MemoryFilesResponse)
+async def clear_memory_files() -> MemoryFilesResponse:
+    store.clear_all()
+    stats = store.stats()
+    return MemoryFilesResponse(files=[], total_documents=stats.total_documents, total_chunks=stats.total_chunks)
 
 
 @app.post("/query", response_model=QueryResponse)

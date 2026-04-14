@@ -57,6 +57,19 @@ class JsonStore:
     def all_chunks(self) -> list[dict[str, Any]]:
         return self._read_index().get("chunks", [])
 
+    def list_documents(self) -> list[dict[str, Any]]:
+        index = self._read_index()
+        docs = index.get("documents", [])
+        docs.sort(key=lambda d: d.get("created_at", ""), reverse=True)
+        return docs
+
+    def clear_all(self) -> None:
+        with self._lock:
+            self._write_index({"documents": [], "chunks": []})
+            for path in self.docs_dir.glob("*"):
+                if path.is_file():
+                    path.unlink(missing_ok=True)
+
     def stats(self) -> StorageStats:
         index = self._read_index()
         return StorageStats(

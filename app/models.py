@@ -42,3 +42,16 @@ class IngestResponse(BaseModel):
     total_documents: int
     total_chunks: int
 
+
+class MemoryFile(BaseModel):
+    doc_id: str
+    filename: str
+    pages: int
+    created_at: str | None = None
+
+
+class MemoryFilesResponse(BaseModel):
+    files: list[MemoryFile]
+    total_documents: int
+    total_chunks: int
+
