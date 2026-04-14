@@ -13,6 +13,14 @@ const selectedFileList = document.getElementById("selectedFileList");
 const pendingFiles = new Map();
 const knownMemoryHashes = new Set();
 const knownMemorySignatures = new Set();
+const TAB_SESSION_KEY = "stackai_tab_session_id";
+const tabSessionId = (() => {
+  const existing = sessionStorage.getItem(TAB_SESSION_KEY);
+  if (existing) return existing;
+  const created = `tab_${crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`;
+  sessionStorage.setItem(TAB_SESSION_KEY, created);
+  return created;
+})();
 
 function escapeHtml(text) {
   return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
@@ -158,7 +166,9 @@ function renderMemoryFiles(data) {
 }
 
 async function refreshMemoryFiles() {
-  const res = await fetch("/memory/files");
+  const res = await fetch("/memory/files", {
+    headers: { "x-session-id": tabSessionId },
+  });
   if (!res.ok) {
     throw new Error("Could not fetch file memory.");
   }
@@ -179,7 +189,10 @@ async function sha256Hex(file) {
 }
 
 async function clearMemory() {
-  const res = await fetch("/memory/files", { method: "DELETE" });
+  const res = await fetch("/memory/files", {
+    method: "DELETE",
+    headers: { "x-session-id": tabSessionId },
+  });
   if (!res.ok) {
     const txt = await res.text();
     throw new Error(txt || "Failed to clear files");
@@ -264,6 +277,7 @@ uploadBtn.addEventListener("click", async () => {
     const res = await fetch("/ingest", {
       method: "POST",
       body: form,
+      headers: { "x-session-id": tabSessionId },
     });
     if (!res.ok) {
       const txt = await res.text();
@@ -311,7 +325,10 @@ askBtn.addEventListener("click", async () => {
   try {
     const res = await fetch("/query", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-session-id": tabSessionId,
+      },
       body: JSON.stringify({ query }),
     });
     if (!res.ok) {

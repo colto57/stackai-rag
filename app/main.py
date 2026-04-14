@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 from uuid import uuid4
 
 from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile
@@ -22,6 +23,7 @@ settings = load_settings()
 embedder = MistralEmbeddingClient(settings.mistral_api_key, settings.mistral_embed_model)
 generation = GenerationService(settings)
 stores_by_session: dict[str, JsonStore] = {}
+_SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{8,120}$")
 
 app = FastAPI(title="StackAI RAG Backend")
 app.add_middleware(
@@ -44,9 +46,13 @@ def _store_for_session(session_id: str) -> JsonStore:
 
 @app.middleware("http")
 async def session_middleware(request: Request, call_next):
-    session_id = request.cookies.get("session_id")
-    if not session_id:
-        session_id = uuid4().hex
+    header_session_id = request.headers.get("x-session-id", "").strip()
+    if header_session_id and _SESSION_ID_RE.match(header_session_id):
+        session_id = header_session_id
+    else:
+        session_id = request.cookies.get("session_id")
+        if not session_id:
+            session_id = uuid4().hex
     request.state.session_id = session_id
     response = await call_next(request)
     response.set_cookie(
