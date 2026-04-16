@@ -2,6 +2,11 @@
 
 This repository implements a complete Retrieval-Augmented Generation (RAG) system over PDF files using FastAPI and Mistral AI APIs, with a built-in web chat UI.
 
+## Live Demo
+
+- UI: [https://stackai-rag.onrender.com/](https://stackai-rag.onrender.com/)
+- API Docs: [https://stackai-rag.onrender.com/docs](https://stackai-rag.onrender.com/docs)
+
 ## What This Project Includes
 
 - `POST /ingest` endpoint for uploading one or more PDF files.
@@ -183,7 +188,7 @@ uvicorn app.main:app --reload
 
 ## Public Link Deployment (Render)
 
-If you want anyone to use the app with one URL, deploy to Render:
+This repository includes Render deployment support for a single public URL.
 
 1. Push this repo to GitHub (already done).
 2. Go to [Render](https://render.com/) and create a new account/service.
