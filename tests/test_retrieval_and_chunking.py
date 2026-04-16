@@ -3,7 +3,6 @@ from app.services.pdf_ingest import chunk_pages
 from app.services.query_processing import detect_intent, rewrite_query_for_retrieval
 from app.services.retrieval import acronym_tokens, cosine_similarity
 from app.services.storage import JsonStore
-from app.services.pdf_ingest import IngestionService
 
 
 def _settings() -> Settings:
@@ -74,4 +73,17 @@ def test_storage_keeps_distinct_documents_for_same_millisecond_ids(tmp_path) -> 
 
 def test_acronym_token_extraction() -> None:
     assert acronym_tokens("What is README in this PDF?") == ["readme"]
+
+
+def test_chunk_pages_handles_long_technical_blocks() -> None:
+    settings = _settings()
+    long_block = (
+        "README framework uses symbolic regression with Bayesian Optimization and Grey Wolf Optimizer. "
+        "This section includes mathematical constraints, objective functions, and reproducibility checklist. "
+        "Hyperparameters and random seeds are reported for each experiment to ensure comparability. "
+        "Additional ablation studies describe why latent diffusion improves the equation search objective."
+    )
+    chunks = chunk_pages([(1, long_block)], settings)
+    assert len(chunks) >= 2
+    assert all(chunk["text"].strip() for chunk in chunks)
 

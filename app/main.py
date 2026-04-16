@@ -178,7 +178,8 @@ async def query(request: Request, req: QueryRequest) -> QueryResponse:
         )
 
     rewritten = rewrite_query_for_retrieval(req.query)
-    found = await retrieval.retrieve(rewritten, top_k)
+    retrieval_k = min(settings.max_top_k, max(top_k, 8))
+    found = await retrieval.retrieve(rewritten, retrieval_k)
     results = found["results"]
     if not results:
         return QueryResponse(

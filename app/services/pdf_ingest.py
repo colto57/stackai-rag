@@ -15,8 +15,9 @@ from app.services.embeddings import MistralEmbeddingClient
 from app.services.storage import JsonStore
 
 
-_SENTENCE_SPLIT_RE = re.compile(r"(?<=[\.\!\?])\s+")
-_WHITESPACE_RE = re.compile(r"\s+")
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[\.\!\?\:;])\s+")
+_INLINE_SPACE_RE = re.compile(r"[ \t]+")
+_MULTI_NEWLINE_RE = re.compile(r"\n{3,}")
 
 
 @dataclass
@@ -28,12 +29,48 @@ class IngestedDocument:
 
 
 def _normalize_text(text: str) -> str:
-    return _WHITESPACE_RE.sub(" ", text).strip()
+    # Preserve paragraph boundaries for technical documents while cleaning noisy spacing.
+    text = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+    text = _INLINE_SPACE_RE.sub(" ", text)
+    text = _MULTI_NEWLINE_RE.sub("\n\n", text)
+    return text.strip()
 
 
 def _sentences(text: str) -> list[str]:
     raw = _SENTENCE_SPLIT_RE.split(text)
     return [s.strip() for s in raw if s.strip()]
+
+
+def _paragraphs(text: str) -> list[str]:
+    raw = re.split(r"\n\s*\n|\n", text)
+    return [p.strip() for p in raw if p.strip()]
+
+
+def _split_large_paragraph(paragraph: str, max_chars: int) -> list[str]:
+    if len(paragraph) <= max_chars:
+        return [paragraph]
+    parts: list[str] = []
+    current = ""
+    for sent in _sentences(paragraph):
+        candidate = sent if not current else f"{current} {sent}"
+        if len(candidate) <= max_chars:
+            current = candidate
+            continue
+        if current:
+            parts.append(current)
+        current = sent
+    if current:
+        parts.append(current)
+
+    # Fallback for very long sentence/formula blocks.
+    final_parts: list[str] = []
+    for part in parts:
+        if len(part) <= max_chars:
+            final_parts.append(part)
+            continue
+        for idx in range(0, len(part), max_chars):
+            final_parts.append(part[idx : idx + max_chars].strip())
+    return [p for p in final_parts if p]
 
 
 def chunk_pages(page_texts: list[tuple[int, str]], settings: Settings) -> list[dict[str, Any]]:
@@ -46,29 +83,30 @@ def chunk_pages(page_texts: list[tuple[int, str]], settings: Settings) -> list[d
         text = _normalize_text(page_text)
         if not text:
             continue
-        for sentence in _sentences(text):
-            add_text = sentence if not current_text else f"{current_text} {sentence}"
-            if len(add_text) <= settings.max_chunk_chars:
-                current_text = add_text
-                current_pages.append(page_num)
-                continue
+        for paragraph in _paragraphs(text):
+            for unit in _split_large_paragraph(paragraph, settings.max_chunk_chars):
+                add_text = unit if not current_text else f"{current_text}\n{unit}"
+                if len(add_text) <= settings.max_chunk_chars:
+                    current_text = add_text
+                    current_pages.append(page_num)
+                    continue
 
-            if len(current_text) >= settings.min_chunk_chars:
-                chunks.append(
-                    {
-                        "chunk_idx": chunk_idx,
-                        "text": current_text,
-                        "page_start": min(current_pages),
-                        "page_end": max(current_pages),
-                    }
-                )
-                chunk_idx += 1
-                overlap = current_text[-settings.chunk_overlap_chars :] if settings.chunk_overlap_chars > 0 else ""
-                current_text = (overlap + " " + sentence).strip() if overlap else sentence
-                current_pages = [page_num]
-            else:
-                current_text = add_text
-                current_pages.append(page_num)
+                if len(current_text) >= settings.min_chunk_chars:
+                    chunks.append(
+                        {
+                            "chunk_idx": chunk_idx,
+                            "text": current_text,
+                            "page_start": min(current_pages),
+                            "page_end": max(current_pages),
+                        }
+                    )
+                    chunk_idx += 1
+                    overlap = current_text[-settings.chunk_overlap_chars :] if settings.chunk_overlap_chars > 0 else ""
+                    current_text = (overlap + "\n" + unit).strip() if overlap else unit
+                    current_pages = [page_num]
+                else:
+                    current_text = add_text
+                    current_pages.append(page_num)
 
     if current_text:
         chunks.append(

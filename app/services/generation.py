@@ -9,6 +9,29 @@ from app.config import Settings
 
 
 _SENT_SPLIT = re.compile(r"(?<=[\.\!\?])\s+")
+_TOKEN_RE = re.compile(r"[a-zA-Z0-9]+")
+_STOP_TOKENS = {
+    "what",
+    "which",
+    "how",
+    "does",
+    "about",
+    "this",
+    "that",
+    "with",
+    "from",
+    "into",
+    "your",
+    "their",
+    "have",
+    "has",
+    "tell",
+    "me",
+    "the",
+    "and",
+    "for",
+    "you",
+}
 
 
 class GenerationService:
@@ -41,6 +64,10 @@ class GenerationService:
         intent: str,
         results: list[dict[str, Any]],
     ) -> tuple[str, list[str]]:
+        if not self._query_has_context_support(query, results):
+            citations = [f"[{i}] {r['filename']} p.{r['page_start']}-{r['page_end']}" for i, r in enumerate(results, start=1)]
+            return "insufficient evidence", citations
+
         context_lines = []
         for i, item in enumerate(results, start=1):
             context_lines.append(
@@ -145,4 +172,14 @@ class GenerationService:
         if "[unsupported claim removed by evidence filter.]" in text:
             return True
         return False
+
+    def _query_has_context_support(self, query: str, results: list[dict[str, Any]]) -> bool:
+        q_terms = {t for t in _TOKEN_RE.findall((query or "").lower()) if len(t) > 2 and t not in _STOP_TOKENS}
+        if not q_terms:
+            return True
+        context = " ".join(r.get("text", "").lower() for r in results)
+        if not context:
+            return False
+        covered = sum(1 for term in q_terms if term in context)
+        return covered / len(q_terms) >= 0.35
 

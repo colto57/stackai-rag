@@ -13,6 +13,24 @@ from app.services.storage import JsonStore
 _TOKEN_RE = re.compile(r"[a-zA-Z0-9]+")
 _ACRONYM_RE = re.compile(r"\b[A-Z]{3,}\b")
 _IGNORED_ACRONYMS = {"pdf", "api", "llm", "rag"}
+_STOP_TOKENS = {
+    "what",
+    "which",
+    "how",
+    "does",
+    "about",
+    "this",
+    "that",
+    "with",
+    "from",
+    "into",
+    "your",
+    "their",
+    "have",
+    "has",
+    "tell",
+    "me",
+}
 
 
 def _tokens(text: str) -> list[str]:
@@ -22,6 +40,10 @@ def _tokens(text: str) -> list[str]:
 def acronym_tokens(query: str) -> list[str]:
     tokens = [m.group(0).lower() for m in _ACRONYM_RE.finditer(query or "")]
     return [t for t in tokens if t not in _IGNORED_ACRONYMS]
+
+
+def _query_terms(query: str) -> set[str]:
+    return {t for t in _tokens(query) if len(t) > 2 and t not in _STOP_TOKENS}
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -49,7 +71,7 @@ class RetrievalService:
 
         semantic_scores = await self._semantic_scores(query, chunks)
         keyword_scores = self._keyword_scores(query, chunks)
-        fused = self._hybrid_fuse(chunks, semantic_scores, keyword_scores)
+        fused = self._hybrid_fuse(chunks, query, semantic_scores, keyword_scores)
         reranked = self._rerank(fused)
         acronyms = acronym_tokens(query)
         acronym_filtered_count = 0
@@ -119,6 +141,7 @@ class RetrievalService:
     def _hybrid_fuse(
         self,
         chunks: list[dict[str, Any]],
+        query: str,
         semantic: dict[str, float],
         keyword: dict[str, float],
     ) -> list[dict[str, Any]]:
@@ -134,7 +157,8 @@ class RetrievalService:
             key_norm = (keyword.get(cid, 0.0) / max_key) if max_key > 0 else 0.0
             weighted = self.settings.semantic_weight * sem_norm + self.settings.keyword_weight * key_norm
             rrf = 1.0 / (60 + sem_rank.get(cid, 1000)) + 1.0 / (60 + key_rank.get(cid, 1000))
-            total = 0.85 * weighted + 0.15 * rrf
+            coverage_bonus = self._coverage_bonus(c["text"], query=query)
+            total = 0.82 * weighted + 0.13 * rrf + 0.05 * coverage_bonus
             fused.append(
                 {
                     **c,
@@ -145,6 +169,14 @@ class RetrievalService:
             )
         fused.sort(key=lambda x: x["score"], reverse=True)
         return fused
+
+    def _coverage_bonus(self, text: str, query: str) -> float:
+        terms = _query_terms(query)
+        if not terms:
+            return 0.0
+        text_tokens = set(_tokens(text))
+        covered = sum(1 for t in terms if t in text_tokens)
+        return covered / len(terms)
 
     def _rerank(self, ranked: list[dict[str, Any]]) -> list[dict[str, Any]]:
         seen_signatures: set[str] = set()
