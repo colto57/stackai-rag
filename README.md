@@ -158,51 +158,6 @@ requirements.txt
 ### `GET /`
 - Serves the chat UI.
 
-## Setup and Run
-
-1. Create virtual environment and install dependencies:
-
-```bash
-python -m venv .venv
-.venv\\Scripts\\activate
-pip install -r requirements.txt
-```
-
-2. Configure environment:
-
-```bash
-copy .env.example .env
-```
-
-Fill `MISTRAL_API_KEY` in `.env` (the assignment-provided key or your own).
-
-3. Run the API:
-
-```bash
-uvicorn app.main:app --reload
-```
-
-4. Open:
-- API docs: `http://127.0.0.1:8000/docs`
-- Chat UI: `http://127.0.0.1:8000/`
-
-## Public Link Deployment (Render)
-
-This repository includes Render deployment support for a single public URL.
-
-1. Push this repo to GitHub (already done).
-2. Go to [Render](https://render.com/) and create a new account/service.
-3. Choose **New +** -> **Blueprint** and select this repository.
-4. Render will detect `render.yaml` and create the web service.
-5. In Render service settings, set:
-   - `MISTRAL_API_KEY` = your working key
-6. Click deploy and wait for build to complete.
-7. Share your Render URL (for example: `https://stackai-rag.onrender.com/`).
-
-Notes:
-- Free tier can sleep after inactivity; first request may be slow.
-- Uploaded PDFs are stored on ephemeral disk in this implementation, so storage may reset after restarts/redeploys.
-
 ## Test
 
 ```bash
@@ -235,10 +190,4 @@ pytest -q
   - frontend sends a per-tab `x-session-id`, so each newly opened tab/link instance is isolated,
   - users sharing the same public URL do not see each other's uploaded PDFs.
 
-## Assignment Constraints Compliance
-
-- FastAPI: yes.
-- Mistral AI API: yes (embeddings + generation).
-- No external library for search/RAG orchestration: yes (custom retrieval logic).
-- No third-party vector database: yes (local JSON storage + Python similarity).
 
