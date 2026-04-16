@@ -69,6 +69,11 @@ class JsonStore:
         docs = self._read_index().get("documents", [])
         return any(d.get("file_hash") == file_hash for d in docs)
 
+    def chunks_for_doc(self, doc_id: str) -> list[dict[str, Any]]:
+        chunks = [c for c in self._read_index().get("chunks", []) if c.get("doc_id") == doc_id]
+        chunks.sort(key=lambda c: c.get("chunk_idx", 0))
+        return chunks
+
     def clear_all(self) -> None:
         with self._lock:
             self._write_index({"documents": [], "chunks": []})

@@ -42,6 +42,7 @@ def test_intent_detection() -> None:
     assert detect_intent("Please list all security controls in the docs").use_kb is True
     assert detect_intent("Give me social security numbers").intent == "refusal_pii"
     assert detect_intent("what files do you have access to").intent == "file_inventory"
+    assert detect_intent("tell me about the pdf i uploaded").intent == "doc_summary"
 
 
 def test_query_rewrite() -> None:

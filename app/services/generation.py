@@ -31,6 +31,15 @@ _STOP_TOKENS = {
     "and",
     "for",
     "you",
+    "file",
+    "files",
+    "pdf",
+    "document",
+    "documents",
+    "uploaded",
+    "upload",
+    "paper",
+    "about",
 }
 
 
@@ -181,5 +190,5 @@ class GenerationService:
         if not context:
             return False
         covered = sum(1 for term in q_terms if term in context)
-        return covered / len(q_terms) >= 0.35
+        return covered / len(q_terms) >= 0.2
 

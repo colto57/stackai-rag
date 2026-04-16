@@ -177,6 +177,51 @@ async def query(request: Request, req: QueryRequest) -> QueryResponse:
             used_knowledge_base=False,
         )
 
+    if intent_result.intent == "doc_summary":
+        docs = store.list_documents()
+        if not docs:
+            return QueryResponse(
+                answer="insufficient evidence",
+                status="insufficient_evidence",
+                intent=intent_result.intent,
+                used_knowledge_base=True,
+            )
+        latest_doc = docs[0]
+        summary_chunks = store.chunks_for_doc(latest_doc["doc_id"])
+        selected = summary_chunks[: max(top_k, 4)]
+        if not selected:
+            return QueryResponse(
+                answer="insufficient evidence",
+                status="insufficient_evidence",
+                intent=intent_result.intent,
+                used_knowledge_base=True,
+            )
+        answer, _ = await generation.grounded_answer(
+            req.query,
+            f"summary of {latest_doc.get('filename', 'document')}",
+            intent_result.intent,
+            selected,
+        )
+        citations = [
+            Citation(
+                chunk_id=item["chunk_id"],
+                document=item["filename"],
+                page_start=item["page_start"],
+                page_end=item["page_end"],
+                score=item.get("score", 1.0),
+                text_preview=item["text"][:220],
+            )
+            for item in selected[:top_k]
+        ]
+        return QueryResponse(
+            answer=answer,
+            status="ok" if answer != "insufficient evidence" else "insufficient_evidence",
+            intent=intent_result.intent,
+            used_knowledge_base=True,
+            citations=citations,
+            retrieval_debug={"mode": "latest_document_summary", "doc_id": latest_doc.get("doc_id")},
+        )
+
     rewritten = rewrite_query_for_retrieval(req.query)
     retrieval_k = min(settings.max_top_k, max(top_k, 8))
     found = await retrieval.retrieve(rewritten, retrieval_k)
